@@ -2,7 +2,7 @@
 # Implementation of Swing Modulo Scheduling based on
 # "Lifetime-sensitive Modulo Scheduling in a Production Environment", Josep Llosa et al.
 import networkx as nx
-from analysis import compute_asap, compute_alap, compute_mob, compute_depth, compute_height
+from analysis import *
 from data import build_fig2
 
 DFG, engineKind, hwConfig, Latency = build_fig2()
