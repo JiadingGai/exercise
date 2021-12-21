@@ -1,5 +1,5 @@
 all:TMP
 TMP:TMP.cpp
-	g++ -o $@ $^
+	g++ -o $@ $^ --std=c++17
 clean:
 	rm -f TMP

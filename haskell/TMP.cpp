@@ -101,6 +101,68 @@ all<predicate, head, tail...> {
   static const int value = predicate<head>::value && all<predicate, tail...>::value;
 };
 
+// foldr.hs
+//     foldr f init [] init
+//     foldr f init (head:tail) =
+//         f head (foldr f init tail)
+template<template<typename, int> typename, int, typename...> struct
+fold_right;
+
+template<template<typename, int> typename f, int init> struct
+fold_right<f, init> {
+  static const int value = init;
+};
+
+template<template<typename, int> typename f, int init, typename head, typename...tail> struct
+fold_right<f, init, head, tail...> {
+  static const int value = f<head, fold_right<f, init, tail...>::value>::value;
+};
+
+template<typename head, int right_value> struct
+add_it {
+  static const int value = right_value + 1;
+};
+
+// sum.hs
+//   sum [] = 0
+//   sum (head:tail) = head + (sum tail)
+template<int...> struct
+sum;
+
+template<> struct
+sum<> {
+  static const int value = 0;
+};
+
+template<int head, int... tail> struct
+sum<head, tail...> {
+  static const int value = head + sum<tail...>::value;
+};
+
+// list_comp.hs
+//  count lst = sum [1 | x <- lst]
+template<typename T> struct
+one {
+  static const int value = 1;
+};
+
+template<typename... lst> struct
+count {
+  /*
+   * E.g., lst = [int, char, void*], one<lst>::value... will be expanded to
+   * [one<int>::value, one<char>::value, one<void*>::value]. The subsequent
+   * call to sum would be made with those arguments. The ellipsis in C++
+   * follows a pattern that contains a pack, it's not the pack that's
+   * expanded, but the whole pattern is repeated for each element of the
+   * pack.
+   */
+  static const int value = sum<one<lst>::value...>::value;
+};
+
+template<typename... lst> struct
+countPtrs {
+  static const int value = sum<isPtr<lst>::value ...>::value;
+};
 
 int main() {
   std::cout << "[factorial.hs] Factorial of 6 = " << fact<6>::value << "\n";
@@ -119,5 +181,15 @@ int main() {
   std::cout << "[all.hs] all<isPtr, int*, char*, float*>::value = "
 	    << all<isPtr, int*, char*, float*>::value << "; "
 	    << all<isConst, const int*, const char*, float*>::value << std::endl;
+  std::cout << "[foldr.hs] fold_right<f, 0, int, float, double, char, void>::value = "
+	    << fold_right<add_it, 0, int, float, double, char, void>::value << std::endl;
+  std::cout << "[foldr.hs] fold_right<f, 0, int, float, double, char, void>::value = "
+	    << fold_right<add_it, 0, int, float, double, char, void>::value << std::endl;
+  std::cout << "[sum.hs] sum<1,2,3,4,5,6,7,8,9>::value = "
+	    << sum<1,2,3,4,5,6,7,8,9>::value << std::endl;
+  std::cout << "[list_comp.hs] count<int, float, double, char, void>::value = "
+	    << count<int, float, double, char, void>::value << std::endl;
+  std::cout << "[list_comp.hs] countPtrs<int*, char*, void*, short*, float*, double*, bool>::value = "
+	    << countPtrs<int*, char*, void*, short*, float*, double*, bool>::value << std::endl;
   return 0;
 }
