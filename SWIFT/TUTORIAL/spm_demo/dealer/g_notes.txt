@@ -1,0 +1,3 @@
+how to drive the demo:
+
+spm_demo/dealer$ swift build; swift run dealer 7
