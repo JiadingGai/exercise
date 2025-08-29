@@ -1,0 +1,3 @@
+[submodule "gpu_microbenchmark/CuAssembler"]
+	path = gpu_microbenchmark/CuAssembler
+	url = https://github.com/cloudcores/CuAssembler.git
