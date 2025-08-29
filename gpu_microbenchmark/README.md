@@ -61,3 +61,39 @@ ldg  cg     64     90000      610985186      184320000     3.31480678   106.0738
 
 nvdisasm -g -c ./cpi_2.sm_86.cubin | grep -n 'Function : micro_lds_kernel_spec'
 nvdisasm -g -c ./cpi_2.sm_86.cubin | grep -n 'LDS\.128' -n
+
+# sass editing
+
+1. set up CuAssembler
+   21  export PATH=${PATH}:~/exercise/gpu_microbenchmark/CuAssembler/bin
+   22  export PYTHONPATH=${PYTHOPATH}:~/exercise/gpu_microbenchmark/CuAssembler/
+
+2. nvcc compile cpi_bench.cu with --keep
+
+nvcc -O3 -arch=sm_86 -o cpi_bench cpi_bench.cu -lcuda --keep 
+
+3. run cuasm 
+
+# disassemble
+cuasm cpi_bench.sm_86.cubin -o cpi_bench.sm_86.cuasm
+# edit cpi_bench.sm_86.cuasm
+# reassemble
+cuasm cpi_bench.sm_86.cuasm -o cpi_bench.sm_86.patched.cubin;
+# run cpi_bench with cubin loading from patched cubin
+./cpi_bench --op lds --iters 90000 --smem-floats 4096 --patched-cubin cpi_bench.sm_86.patched.cubin --patched-symbol _Z16micro_lds_kernelILi64EEvPmS0_Pfii --patched-unroll 64  
+
+note that `SHI_REGISTERS` declared register count usage in a kernel.
+
+If you change the dest to a higher register, make sure it (and the next 3) are within the kernel’s declared register count (SHI_REGISTERS). E.g., using R32 means you need at least 36 registers.
+
+This register-index rule is separate from memory address alignment: for .128, keep the address 16-byte aligned. 
+
+Don’t use the same dest quad back-to-back if you want throughput; rotate R20/R24/R28/... to avoid WAW serialization. As illustrate below, we are rotating R48/R52/R56/... over and over. But be
+sure to set `SHI_REGISTERS` to at least 64
+
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R48, [R35] ;
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R52, [R35] ;
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R56, [R35] ;
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R48, [R35] ;
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R52, [R35] ;
+[B------:R-:W0:-:S01]         /*2da0*/                   LDS.128 R56, [R35] ;
