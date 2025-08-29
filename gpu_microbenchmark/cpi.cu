@@ -15,7 +15,7 @@ struct Args {
   const char* mode = "micro";   // "micro" or "full"
   const char* op   = "lds";     // "lds" or "ldg"
   const char* cache= "ca";      // ldg cache: "ca" or "cg"
-  int   iters     = 20000;      // loop iterations
+  int   iters     = 90000;      // loop iterations
   int   unroll    = 8;          // # of LDx.128 per iteration per thread
   int   threads   = 32;         // micro: 32; full: typical 256/512/1024
   int   smem_f    = 4096;       // shared floats per block (LDS)
