@@ -96,6 +96,54 @@ LOSS_LOG_EVERY            Print batch loss every N steps. 0 disables it. Default
 
 ## Notes
 
-`mytransformers.py` uses a local, unsmoothed corpus BLEU implementation for
-lightweight training feedback. It is useful for sanity checks but is not a
-standardized sacreBLEU score for benchmark reporting.
+`mytransformers.py` uses `calculate_bleu` plus a local, unsmoothed
+`corpus_bleu` implementation for lightweight training feedback. It is useful
+for sanity checks but is not a standardized sacreBLEU score for benchmark
+reporting.
+
+For each dataset example $(x_i, y_i)$, `calculate_bleu` greedily decodes the
+source sentence, removes one trailing `<eos>` token if present, tokenizes the
+gold English target, and then calls `corpus_bleu` with one reference per
+candidate:
+
+$$
+\hat{C}_i =
+\operatorname{strip}_{\langle eos\rangle}
+\left(\operatorname{GreedyDecode}(x_i)\right),
+\qquad
+R_i = \left\{\operatorname{Tok}_{en}(y_i)\right\}
+$$
+
+$$
+\operatorname{calculate\_bleu}(D) =
+\operatorname{corpus\_bleu}
+\left(\{\hat{C}_i\}_{i=1}^{m}, \{R_i\}_{i=1}^{m}\right)
+$$
+
+For candidates $C$, references $R$, $N=4$, and uniform weights
+$w_n = \frac{1}{4}$, `corpus_bleu` computes modified n-gram precision with
+clipped counts:
+
+$$
+p_n =
+\frac{
+  \sum_i \sum_{g \in G_n(C_i)}
+    \min\left(\operatorname{count}_{C_i}(g),
+    \max_{r \in R_i}\operatorname{count}_r(g)\right)
+}{
+  \sum_i \max\left(|C_i| - n + 1, 0\right)
+}
+$$
+
+It then applies the standard corpus brevity penalty using the reference length
+$r$ closest to each candidate length and total candidate length $c$:
+
+$$
+\operatorname{BLEU} =
+\exp\left(\min\left(1 - \frac{r}{c}, 0\right)\right)
+\cdot
+\exp\left(\sum_{n=1}^{4} w_n \log p_n\right)
+$$
+
+Because this implementation is unsmoothed, it returns `0.0` when $c = 0$ or
+when any clipped n-gram count is zero.
