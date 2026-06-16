@@ -34,9 +34,28 @@ From this directory:
 ./venv_latest_torch/bin/python -m spacy download en_core_web_sm
 ```
 
-The script downloads `train.jsonl`, `val.jsonl`, and `test.jsonl` from
-`bentrevett/multi30k` on first run. By default it caches them under
-`data/multi30k`; set `MULTI30K_CACHE_DIR` to use another cache path.
+The repo vendors a small JSONL snapshot under `data/multi30k` so the exercise
+can still run if the mirror disappears. If those files are missing, the script
+downloads them from `bentrevett/multi30k`; set `MULTI30K_CACHE_DIR` to use
+another cache path.
+
+## Dataset Snapshot
+
+The vendored files are mirrored from:
+
+```text
+https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/train.jsonl
+https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/val.jsonl
+https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/test.jsonl
+```
+
+Snapshot sizes and SHA-256 checksums:
+
+```text
+train.jsonl  29,000 lines  de8a1bb324fcf14c44b17b2baee60304c9aba9e5f5889da8a955ffffebc71abb
+val.jsonl     1,014 lines  f23e04140ebb001299365cd1d041da54c6cdd970b6eba64b7124242580f05e52
+test.jsonl    1,000 lines  0b997c04e05614fdca57c7997bb42822db69b4177d6dc96d80a5a6af8a758588
+```
 
 ## Run
 
