@@ -101,37 +101,38 @@ LOSS_LOG_EVERY            Print batch loss every N steps. 0 disables it. Default
 for sanity checks but is not a standardized sacreBLEU score for benchmark
 reporting.
 
-For each dataset example $(x_i, y_i)$, `calculate_bleu` greedily decodes the
-source sentence, removes one trailing `<eos>` token if present, tokenizes the
-gold English target, and then calls `corpus_bleu` with one reference per
-candidate:
+For each dataset example $(x_i, y_i)$, `calculate_bleu` greedily decodes
+$x_i$, removes one trailing `<eos>` token if present, tokenizes the gold English
+target $y_i$, and then calls `corpus_bleu` with one reference per candidate.
+Let $\hat{C}_i$ be that decoded candidate and let $R_i$ be its one-reference
+set:
 
 $$
-\hat{C}_i =
-\text{strip}_{\langle eos\rangle}
-\left(\text{GreedyDecode}(x_i)\right),
+D = \{(x_i, y_i)\}_{i=1}^{m},
 \qquad
-R_i = \left\{\text{Tok}_{en}(y_i)\right\}
+C = \{\hat{C}_i\}_{i=1}^{m},
+\qquad
+R = \{R_i\}_{i=1}^{m}
 $$
 
 $$
-\text{CalcBLEU}(D) =
-\text{CorpusBLEU}
-\left(\{\hat{C}_i\}_{i=1}^{m}, \{R_i\}_{i=1}^{m}\right)
+B_D = B(C, R)
 $$
+
+Here, $B(C, R)$ denotes the local `corpus_bleu` calculation.
 
 For candidates $C$, references $R$, $N=4$, and uniform weights
 $w_n = \frac{1}{4}$, `corpus_bleu` computes modified n-gram precision with
-clipped counts:
+clipped counts. Here, $G_n(s)$ is the multiset of n-grams in sequence $s$, and
+$N(g, s)$ is the count of n-gram $g$ in $s$:
 
 $$
 p_n =
 \frac{
-  \sum_i \sum_{g \in G_n(C_i)}
-    \min\left(\text{count}_{C_i}(g),
-    \max_{r \in R_i}\text{count}_r(g)\right)
+  \sum_i \sum_{g \in G_n(\hat{C}_i)}
+    \min\left(N(g, \hat{C}_i), \max_{r \in R_i} N(g, r)\right)
 }{
-  \sum_i \max\left(|C_i| - n + 1, 0\right)
+  \sum_i \max\left(|\hat{C}_i| - n + 1, 0\right)
 }
 $$
 
@@ -139,10 +140,14 @@ It then applies the standard corpus brevity penalty using the reference length
 $r$ closest to each candidate length and total candidate length $c$:
 
 $$
-\text{BLEU} =
-\exp\left(\min\left(1 - \frac{r}{c}, 0\right)\right)
-\cdot
-\exp\left(\sum_{n=1}^{4} w_n \log p_n\right)
+BP = \exp\left(\min\left(1 - \frac{r}{c}, 0\right)\right),
+\qquad
+c = \sum_i |\hat{C}_i|
+$$
+
+$$
+BLEU =
+BP \cdot \exp\left(\frac{1}{4}\sum_{n=1}^{4}\log p_n\right)
 $$
 
 Because this implementation is unsmoothed, it returns `0.0` when $c = 0$ or
