@@ -108,15 +108,15 @@ candidate:
 
 $$
 \hat{C}_i =
-\operatorname{strip}_{\langle eos\rangle}
-\left(\operatorname{GreedyDecode}(x_i)\right),
+\text{strip}_{\langle eos\rangle}
+\left(\text{GreedyDecode}(x_i)\right),
 \qquad
-R_i = \left\{\operatorname{Tok}_{en}(y_i)\right\}
+R_i = \left\{\text{Tok}_{en}(y_i)\right\}
 $$
 
 $$
-\operatorname{calculate\_bleu}(D) =
-\operatorname{corpus\_bleu}
+\text{CalcBLEU}(D) =
+\text{CorpusBLEU}
 \left(\{\hat{C}_i\}_{i=1}^{m}, \{R_i\}_{i=1}^{m}\right)
 $$
 
@@ -128,8 +128,8 @@ $$
 p_n =
 \frac{
   \sum_i \sum_{g \in G_n(C_i)}
-    \min\left(\operatorname{count}_{C_i}(g),
-    \max_{r \in R_i}\operatorname{count}_r(g)\right)
+    \min\left(\text{count}_{C_i}(g),
+    \max_{r \in R_i}\text{count}_r(g)\right)
 }{
   \sum_i \max\left(|C_i| - n + 1, 0\right)
 }
@@ -139,7 +139,7 @@ It then applies the standard corpus brevity penalty using the reference length
 $r$ closest to each candidate length and total candidate length $c$:
 
 $$
-\operatorname{BLEU} =
+\text{BLEU} =
 \exp\left(\min\left(1 - \frac{r}{c}, 0\right)\right)
 \cdot
 \exp\left(\sum_{n=1}^{4} w_n \log p_n\right)
