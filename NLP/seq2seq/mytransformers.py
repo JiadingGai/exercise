@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# Adapted from Ben Trevett's PyTorch Seq2Seq Transformer tutorial
+# ("6 - Attention is All You Need"):
+# https://github.com/bentrevett/pytorch-seq2seq/blob/main/legacy/6%20-%20Attention%20is%20All%20You%20Need.ipynb
+
 import torch
 import torch.nn as nn
 from collections import Counter
