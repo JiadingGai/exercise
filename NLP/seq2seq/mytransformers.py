@@ -2,13 +2,136 @@
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torchtext.datasets import multi30k
-from torchtext.vocab import build_vocab_from_iterator, Vocab
-from torchtext.data.utils import get_tokenizer
-from typing import Tuple, List, Iterable, List
-import random, math, time
-import numpy as np
+from collections import Counter
+from pathlib import Path
+from typing import Tuple, List, Iterable
+import json
+import math
+import os
+import random
+import time
+
+import requests
+import spacy
+
+
+class Vocab:
+    def __init__(self, tokens):
+        self._itos = list(tokens)
+        self._stoi = {token: index for index, token in enumerate(self._itos)}
+        self._default_index = None
+        self.vocab = self
+
+    def __len__(self):
+        return len(self._itos)
+
+    def __call__(self, tokens):
+        return [self[token] for token in tokens]
+
+    def __getitem__(self, token):
+        if token in self._stoi:
+            return self._stoi[token]
+        if self._default_index is not None:
+            return self._default_index
+        raise RuntimeError(f"Token {token!r} not found and no default index is set")
+
+    def set_default_index(self, index):
+        self._default_index = index
+
+    def lookup_token(self, index):
+        return self._itos[int(index)]
+
+    def get_stoi(self):
+        return self._stoi
+
+    def get_itos(self):
+        return self._itos
+
+
+def build_vocab_from_iterator(iterator, min_freq=1, specials=None, special_first=True):
+    counter = Counter()
+    for tokens in iterator:
+        counter.update(tokens)
+
+    specials = list(specials or [])
+    regular_tokens = sorted(token for token, count in counter.items() if count >= min_freq and token not in specials)
+    if special_first:
+        return Vocab(specials + regular_tokens)
+    return Vocab(regular_tokens + specials)
+
+
+def get_spacy_tokenizer(language):
+    nlp = spacy.load(language)
+    return lambda text: [token.text for token in nlp.tokenizer(text)]
+
+
+MULTI30K_URLS = {
+    "train": "https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/train.jsonl",
+    "valid": "https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/val.jsonl",
+    "test": "https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/test.jsonl",
+}
+
+
+def load_multi30k_split(split, language_pair=("de", "en")):
+    cache_dir = Path(os.environ.get("MULTI30K_CACHE_DIR", Path(__file__).resolve().parent / "data" / "multi30k"))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = cache_dir / Path(MULTI30K_URLS[split]).name
+
+    if not jsonl_path.exists():
+        with requests.get(MULTI30K_URLS[split], stream=True, timeout=60) as response:
+            response.raise_for_status()
+            with jsonl_path.open("wb") as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+
+    examples = []
+    with jsonl_path.open(encoding="utf-8") as f:
+        for line in f:
+            row = json.loads(line)
+            examples.append((row[language_pair[0]], row[language_pair[1]]))
+    return examples
+
+
+def ngrams_iterator(tokens, max_n):
+    for token in tokens:
+        yield token
+    for n in range(2, max_n + 1):
+        for i in range(len(tokens) - n + 1):
+            yield " ".join(tokens[i : i + n])
+
+
+def compute_ngram_counter(tokens, max_n):
+    return Counter(tuple(x.split(" ")) for x in ngrams_iterator(tokens, max_n))
+
+
+def corpus_bleu(candidate_corpus, references_corpus, max_n=4, weights=[0.25] * 4):
+    clipped_counts = torch.zeros(max_n)
+    total_counts = torch.zeros(max_n)
+    weights = torch.tensor(weights)
+    candidate_len = 0.0
+    refs_len = 0.0
+
+    for candidate, refs in zip(candidate_corpus, references_corpus):
+        current_candidate_len = len(candidate)
+        candidate_len += current_candidate_len
+        refs_len += min((float(len(ref)) for ref in refs), key=lambda x: abs(current_candidate_len - x))
+
+        reference_counters = compute_ngram_counter(refs[0], max_n)
+        for ref in refs[1:]:
+            reference_counters = reference_counters | compute_ngram_counter(ref, max_n)
+
+        clipped_counter = compute_ngram_counter(candidate, max_n) & reference_counters
+        for ngram, count in clipped_counter.items():
+            clipped_counts[len(ngram) - 1] += count
+        for i in range(max_n):
+            total_counts[i] += max(current_candidate_len - i, 0)
+
+    if candidate_len == 0 or min(clipped_counts) == 0:
+        return 0.0
+    score = torch.exp((weights * torch.log(clipped_counts / total_counts)).sum())
+    brevity_penalty = math.exp(min(1 - refs_len / candidate_len, 0))
+    return brevity_penalty * score.item()
 
 class Encoder(nn.Module):
     def __init__(self, 
@@ -382,24 +505,26 @@ class Seq2Seq(nn.Module):
 
 SRC_LANGUAGE = 'de'
 TGT_LANGUAGE = 'en'
-train, valid, test = multi30k.Multi30k("./", split=("train", "valid", "test"), language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+train = load_multi30k_split("train", language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+valid = load_multi30k_split("valid", language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
+test = load_multi30k_split("test", language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
 iter1 = iter(train)
 print("Sample train sentence pair: ", next(iter1))
 iter2 = iter(valid)
 print("Sample Validation sentence pair: ", next(iter2))
 
 for data_iter in train:
-  print("Next Validation sentence pair: ", data_iter)
+  print("Next train sentence pair: ", data_iter)
   break
 
-print(f"Number of training examples = ", len(list(train)))
-print(f"Number of validation examples = ", len(list(valid)))
-#print(f"Number of test examples = ", len(list(test)))
+print(f"Number of training examples = ", len(train))
+print(f"Number of validation examples = ", len(valid))
+print(f"Number of test examples = ", len(test))
 
 token_transform = {}
 vocab_transform = {}
-token_transform[SRC_LANGUAGE] = get_tokenizer('spacy', language='de_core_news_sm')
-token_transform[TGT_LANGUAGE] = get_tokenizer('spacy', language='en_core_web_sm')
+token_transform[SRC_LANGUAGE] = get_spacy_tokenizer('de_core_news_sm')
+token_transform[TGT_LANGUAGE] = get_spacy_tokenizer('en_core_web_sm')
 def yield_tokens(data_iter: Iterable, language: str) -> List[str]:
     language_index = {SRC_LANGUAGE: 0, TGT_LANGUAGE: 1}
     for data_sample in data_iter:
@@ -410,10 +535,7 @@ UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
 # Make sure the tokens are in order of their indices to properly insert them in vocab
 special_symbols = ['<unk>', '<pad>', '<bos>', '<eos>']
 for ln in [SRC_LANGUAGE, TGT_LANGUAGE]:
-    # Training data iterator
-    train_iter = multi30k.Multi30k(split='train', language_pair=(SRC_LANGUAGE, TGT_LANGUAGE))
-    # Create torchtext's Vocab object
-    vocab_transform[ln] = build_vocab_from_iterator(yield_tokens(train_iter, ln),
+    vocab_transform[ln] = build_vocab_from_iterator(yield_tokens(train, ln),
                                                     min_freq=1,
                                                     specials=special_symbols,
                                                     special_first=True)
@@ -532,9 +654,9 @@ def translate_sentence(sentence, src_field: Vocab, trg_field, model, device, max
       #tokens = [token.lower() for token in sentence]
       tokens = [token for token in sentence]
 
-  # the input sentence has already been collated to start with '<bos>' and end with '<eos>'.
+  tokens = [token for token in tokens if token not in ('<bos>', '<eos>')]
   tokens = ['<bos>'] + tokens + ['<eos>']
-  src_indexes = [src_field.vocab.get_stoi()[token] for token in tokens]
+  src_indexes = src_field(tokens)
   src_tensor = torch.LongTensor(src_indexes).unsqueeze(0).to(device)
   src_mask = model.make_src_mask(src_tensor)
   
@@ -566,8 +688,6 @@ translation, attention = translate_sentence(sentence=src_sentence, \
                                             device=device)
 print(f'predicted trg = {translation}')
 
-from torchtext.data.metrics import bleu_score
-
 def calculate_bleu(data, src_field, trg_field, model, device, max_len = 50):
     
     trgs = []
@@ -576,20 +696,21 @@ def calculate_bleu(data, src_field, trg_field, model, device, max_len = 50):
     for datum in data:
         
         src = datum[0]
-        trg = datum[1]
+        trg = token_transform[TGT_LANGUAGE](datum[1])
         
         pred_trg, _ = translate_sentence(src, src_field, trg_field, model, device, max_len)
         
-        #cut off <eos> token
-        pred_trg = pred_trg[:-1]
+        if pred_trg and pred_trg[-1] == '<eos>':
+            pred_trg = pred_trg[:-1]
         
         pred_trgs.append(pred_trg)
         trgs.append([trg])
         
-    return bleu_score(pred_trgs, trgs)
+    return corpus_bleu(pred_trgs, trgs)
 
-bleu_score = calculate_bleu(train_iter, vocab_transform['de'], vocab_transform['en'], model, device)
-print(f'BLEU score = {bleu_score*100:.2f}')
+BLEU_EVAL_LIMIT = int(os.environ.get("BLEU_EVAL_LIMIT", "100"))
+initial_bleu = calculate_bleu(valid[:BLEU_EVAL_LIMIT], vocab_transform['de'], vocab_transform['en'], model, device)
+print(f'Initial validation BLEU score = {initial_bleu*100:.2f}')
 
 """
 Preparing data:
@@ -628,9 +749,14 @@ def collate_fn(batch):
     return src_batch, tgt_batch
 
 from torch.utils.data import DataLoader
-BATCH_SIZE = 128
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "128"))
 #print(len(train_iter))
+train_iter = train
+valid_iter = valid
+test_iter = test
 train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
+valid_dataloader = DataLoader(valid_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
+test_dataloader = DataLoader(test_iter, batch_size=BATCH_SIZE, collate_fn=collate_fn)
 #print(train_dataloader.__str__())
 #for src, tgt in train_dataloader:
 #     print(src.shape)
@@ -652,10 +778,13 @@ model.apply(initialize_weights);
 LEARNING_RATE = 0.0005
 optimizer = torch.optim.Adam(model.parameters(), lr = LEARNING_RATE)
 criterion = nn.CrossEntropyLoss(ignore_index = TRG_PAD_IDX)
+print(f'Loss function = {criterion}')
+
 def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
     numTrainDataPoints = 0
+    total_batches = len(iterator) if hasattr(iterator, "__len__") else None
     for i, batch in enumerate(iterator):
         src = batch[0].to(device)
         trg = batch[1].to(device)
@@ -687,6 +816,15 @@ def train(model, iterator, optimizer, criterion, clip):
         
         epoch_loss += loss.item()
         numTrainDataPoints += 1 #iterator.batch_size
+
+        if LOSS_LOG_EVERY > 0 and ((i + 1) % LOSS_LOG_EVERY == 0 or i == 0):
+            running_loss = epoch_loss / numTrainDataPoints
+            total_batches_str = f"/{total_batches}" if total_batches is not None else ""
+            print(
+                f"\t[train step {i + 1}{total_batches_str}] "
+                f"loss: {loss.item():.3f} | running avg loss: {running_loss:.3f}",
+                flush=True,
+            )
         
     return epoch_loss / numTrainDataPoints
 
@@ -733,7 +871,9 @@ def epoch_time(start_time, end_time):
     elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
     return elapsed_mins, elapsed_secs
 
-N_EPOCHS = 30
+N_EPOCHS = int(os.environ.get("N_EPOCHS", "30"))
+SAMPLE_TRANSLATION_EVERY = int(os.environ.get("SAMPLE_TRANSLATION_EVERY", "1"))
+LOSS_LOG_EVERY = int(os.environ.get("LOSS_LOG_EVERY", "50"))
 CLIP = 1
 
 best_valid_loss = float('inf')
@@ -743,7 +883,7 @@ for epoch in range(N_EPOCHS):
     start_time = time.time()
     
     train_loss = train(model, train_dataloader, optimizer, criterion, CLIP)
-    valid_loss = evaluate(model, train_dataloader, criterion)
+    valid_loss = evaluate(model, valid_dataloader, criterion)
     
     end_time = time.time()
     
@@ -757,18 +897,17 @@ for epoch in range(N_EPOCHS):
     print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):7.3f}')
     print(f'\t Val. Loss: {valid_loss:.3f} |  Val. PPL: {math.exp(valid_loss):7.3f}')
 
-    # check the sample translation after each training epoch
-    paul, attention_ = model(tx.to(device), ty.to(device))
-    predict_tokids = torch.argmax(paul, dim=-1).flatten()
-    predict_toks = []
-    for ptid in predict_tokids:
-      predict_toks.append(vocab_transform['en'].vocab.lookup_token(ptid))
-    print("[GOLD TRANSLATION] = ", y_toks)
-    print("model translation = ", predict_toks)
+    if SAMPLE_TRANSLATION_EVERY > 0 and (epoch + 1) % SAMPLE_TRANSLATION_EVERY == 0:
+        sample_translation, _ = translate_sentence(sample_de[0], vocab_transform['de'], vocab_transform['en'], model, device)
+        if sample_translation and sample_translation[-1] == '<eos>':
+            sample_translation = sample_translation[:-1]
+        print("[SAMPLE SOURCE] = ", sample_de[0])
+        print("[GOLD TRANSLATION] = ", sample_en[0])
+        print("[GREEDY TRANSLATION] = ", sample_translation)
 
-model.load_state_dict(torch.load('tut6-model.pt'))
-test_loss = evaluate(model, train_dataloader, criterion)
+model.load_state_dict(torch.load('tut6-model.pt', map_location=device))
+test_loss = evaluate(model, test_dataloader, criterion)
 print(f'| Test Loss: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
 
-bleu_score = calculate_bleu(train_iter, vocab_transform['de'], vocab_transform['en'], model, device)
-print(f'BLEU score = {bleu_score*100:.2f}')
+test_bleu = calculate_bleu(test_iter[:BLEU_EVAL_LIMIT], vocab_transform['de'], vocab_transform['en'], model, device)
+print(f'Test BLEU score = {test_bleu*100:.2f}')
