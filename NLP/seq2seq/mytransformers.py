@@ -70,12 +70,13 @@ MULTI30K_URLS = {
     "valid": "https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/val.jsonl",
     "test": "https://huggingface.co/datasets/bentrevett/multi30k/resolve/main/test.jsonl",
 }
+LOCAL_MULTI30K_DIR = Path(__file__).resolve().parent / "data" / "multi30k"
 
 
 def load_multi30k_split(split, language_pair=("de", "en")):
-    cache_dir = Path(os.environ.get("MULTI30K_CACHE_DIR", Path(__file__).resolve().parent / "data" / "multi30k"))
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = cache_dir / Path(MULTI30K_URLS[split]).name
+    data_dir = Path(os.environ.get("MULTI30K_CACHE_DIR", LOCAL_MULTI30K_DIR))
+    data_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = data_dir / Path(MULTI30K_URLS[split]).name
 
     if not jsonl_path.exists():
         with requests.get(MULTI30K_URLS[split], stream=True, timeout=60) as response:
@@ -871,7 +872,7 @@ def epoch_time(start_time, end_time):
     elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
     return elapsed_mins, elapsed_secs
 
-N_EPOCHS = int(os.environ.get("N_EPOCHS", "30"))
+N_EPOCHS = int(os.environ.get("N_EPOCHS", "100"))
 SAMPLE_TRANSLATION_EVERY = int(os.environ.get("SAMPLE_TRANSLATION_EVERY", "1"))
 LOSS_LOG_EVERY = int(os.environ.get("LOSS_LOG_EVERY", "50"))
 CLIP = 1

@@ -34,10 +34,10 @@ From this directory:
 ./venv_latest_torch/bin/python -m spacy download en_core_web_sm
 ```
 
-The repo vendors a small JSONL snapshot under `data/multi30k` so the exercise
-can still run if the mirror disappears. If those files are missing, the script
-downloads them from `bentrevett/multi30k`; set `MULTI30K_CACHE_DIR` to use
-another cache path.
+The repo vendors a small JSONL snapshot under `data/multi30k`, and
+`mytransformers.py` uses this local copy by default for train/validation/test
+data. If those files are missing, the script downloads them from
+`bentrevett/multi30k`; set `MULTI30K_CACHE_DIR` to use another local path.
 
 ## Dataset Snapshot
 
@@ -63,7 +63,6 @@ One-epoch smoke test:
 
 ```bash
 PYTHONUNBUFFERED=1 \
-MULTI30K_CACHE_DIR=/private/tmp/seq2seq_smoke_run/Multi30k \
 N_EPOCHS=1 \
 BATCH_SIZE=128 \
 BLEU_EVAL_LIMIT=100 \
