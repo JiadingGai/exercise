@@ -130,9 +130,9 @@ $$
 p_n =
 \frac{
   \sum_i \sum_{g \in G_n(\hat{C}_i)}
-    \min\left(N(g, \hat{C}_i), \max_{r \in R_i} N(g, r)\right)
+    \min(N(g, \hat{C}_i), \max_{r \in R_i} N(g, r))
 }{
-  \sum_i \max\left(|\hat{C}_i| - n + 1, 0\right)
+  \sum_i \max(|\hat{C}_i| - n + 1, 0)
 }
 $$
 
@@ -140,14 +140,14 @@ It then applies the standard corpus brevity penalty using the reference length
 $r$ closest to each candidate length and total candidate length $c$:
 
 $$
-BP = \exp\left(\min\left(1 - \frac{r}{c}, 0\right)\right),
+BP = \exp(\min(1 - \frac{r}{c}, 0)),
 \qquad
 c = \sum_i |\hat{C}_i|
 $$
 
 $$
 BLEU =
-BP \cdot \exp\left(\frac{1}{4}\sum_{n=1}^{4}\log p_n\right)
+BP \cdot \exp(\frac{1}{4}\sum_{n=1}^{4}\log p_n)
 $$
 
 Because this implementation is unsmoothed, it returns `0.0` when $c = 0$ or
